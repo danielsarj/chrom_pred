@@ -15,10 +15,11 @@ for COND in ${Conditions[@]}; do
 #SBATCH --account=pi-lbarreiro
 
 module load python
+conda init
 conda activate chrombpnet
 cd /project/lbarreiro/USERS/daniel/deeplearn_pred/DIY
 
-chrombpnet bias pipeline -g hg19_genome.fa -c chr_length.txt -ibam AF04_${COND}.filtered.bam -o bias/ -d "ATAC" -p ATACseq_peaks.bed -n nonpeaks_fold${i}_negatives.bed -fl splits/fold_${i}.json -b 0.5 -fp ${COND}_fold${i}
+chrombpnet bias pipeline -g hg19_genome.fa -c chr_length.txt -ibam AF04_${COND}.filtered.bam -o bias/${COND}_fold${i}/ -d "ATAC" -p ATACseq_peaks.bed -n nonpeaks_fold${i}_negatives.bed -fl splits/fold_${i}.json -b 0.5 -fp ${COND}_fold${i}
 
 EOF
     	sbatch $SCRIPT_FILE
