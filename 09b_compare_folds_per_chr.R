@@ -1,7 +1,8 @@
 library(data.table)
 library(tidyverse)
+library(rjson)
 "%&%" <- function(a,b) paste(a,b, sep = "")
-setwd('/project/lbarreiro/USERS/daniel/deeplearn_pred/DIY/prediction')
+setwd('W:/deeplearn_pred/DIY/prediction')
 
 ids <- c('AF04','AF06','AF10','AF12','AF14','AF16','AF18','AF20','AF22',
          'AF24','AF26','AF28','AF30','AF34','AF36','AF38','EU03','EU05',
@@ -9,10 +10,20 @@ ids <- c('AF04','AF06','AF10','AF12','AF14','AF16','AF18','AF20','AF22',
          'EU29','EU33','EU37','EU39','EU41','EU43','EU47')
 conditions <- c('NI', 'Flu')
 folds <- c(0,1,2,3,4)
-measured_adj <- fread('/project/lbarreiro/USERS/daniel/katieData/ATACseq_peaks.filtered.paired.noDup.counts_batch.age.corrected.txt')
+measured_adj <- fread('W:/katieData/ATACseq_peaks.filtered.paired.noDup.counts_batch.age.corrected.txt')
 measured_adj$V1 <- gsub('_', ':', measured_adj$V1)
-measured_count <- fread('/project/lbarreiro/USERS/daniel/katieData/ATACseq_peaks.filtered.paired.noDup.counts')
+measured_count <- fread('W:/katieData/ATACseq_peaks.filtered.paired.noDup.counts')
 measured_count$PeakID <- gsub('_', ':', measured_count$PeakID)
+test_chr <- list()
+train_chr <- list()
+valid_chr <- list()
+
+for (f in folds){
+  t <- fromJSON(file='W:/deeplearn_pred/DIY/splits/fold_'%&%f%&%'.json')
+  test_chr[[f+1]] <- t$test
+  train_chr[[f+1]] <- t$train
+  valid_chr[[f+1]] <- t$valid
+  }
 
 for (co in conditions){
   for (i in ids){
@@ -31,29 +42,38 @@ for (co in conditions){
     prediction <- inner_join(prediction, measured_adj_red, by=c('peak'='V1')) %>%
       inner_join(measured_count_red, by=c('peak'='PeakID')) %>% drop_na() %>%
       rename(adj:=!!paste0(i,'_',co,'.x'), count:=!!paste0(i,'_',co,'.y')) %>% 
-      mutate(cond=co)
+      mutate(cond=co) 
     
-    t <- data.frame(c(cor(prediction$fold0_pred, prediction$adj, method='spearman'), 'adj', 0, co),
-                    c(cor(prediction$fold0_pred, prediction$count, method='spearman'), 'count', 0, co),
-                    c(cor(prediction$fold1_pred, prediction$adj, method='spearman'), 'adj', 1, co),
-                    c(cor(prediction$fold1_pred, prediction$count, method='spearman'), 'count', 1, co),
-                    c(cor(prediction$fold2_pred, prediction$adj, method='spearman'), 'adj', 2, co),
-                    c(cor(prediction$fold2_pred, prediction$count, method='spearman'), 'count', 2, co),
-                    c(cor(prediction$fold3_pred, prediction$adj, method='spearman'), 'adj', 3, co),
-                    c(cor(prediction$fold3_pred, prediction$count, method='spearman'), 'count', 3, co),
-                    c(cor(prediction$fold4_pred, prediction$adj, method='spearman'), 'adj', 4, co),
-                    c(cor(prediction$fold4_pred, prediction$count, method='spearman'), 'count', 4, co)) %>%
-      t() %>% as.data.frame() 
+    
+    for (f in folds){
+      train_pred <- prediction %>% separate(peak, into=c('chr','start','end'), sep=':') %>%
+        filter(chr %in% train_chr[[f+1]]) %>% select(all_of('fold'%&%f%&%'_pred'),adj,count,cond)
+      test_pred <- prediction %>% separate(peak, into=c('chr','start','end'), sep=':') %>% 
+        filter(chr %in% test_chr[[f+1]]) %>% select(all_of('fold'%&%f%&%'_pred'),adj,count,cond)
+      valid_pred <- prediction %>% separate(peak, into=c('chr','start','end'), sep=':') %>% 
+        filter(chr %in% valid_chr[[f+1]]) %>% select(all_of('fold'%&%f%&%'_pred'),adj,count,cond)
+      
+      t <- data.frame(c(cor(train_pred[1], train_pred$adj, method='spearman'), 'adj', f, co, 'train'),
+                      c(cor(train_pred[1], train_pred$count, method='spearman'), 'count', f, co, 'train'),
+                      c(cor(test_pred[1], test_pred$adj, method='spearman'), 'adj', f, co, 'test'),
+                      c(cor(test_pred[1], test_pred$count, method='spearman'), 'count', f, co, 'test'),
+                      c(cor(valid_pred[1], valid_pred$adj, method='spearman'), 'adj', f, co, 'valid'),
+                      c(cor(valid_pred[1], valid_pred$count, method='spearman'), 'count', f, co, 'valid')) %>%
+        t() %>% as.data.frame()
+      
+      if (exists('final.corr.df')){
+        final.corr.df <- rbind(final.corr.df, t)
+      } else { final.corr.df <- t}
+    }
     rm(prediction)
-    
-    if (exists('final.corr.df')){
-      final.corr.df <- rbind(final.corr.df, t)
-    } else { final.corr.df <- t}
   }
 }
-
 final.corr.df$V1 <- as.numeric(final.corr.df$V1)
-ggplot(final.corr.df) + geom_violin(aes(x=V2,y=V1,fill=V3)) +
-  geom_boxplot(aes(x=V2,y=V1,fill=V3), width=0.4, position=position_dodge(width=0.9)) + facet_wrap(~V4) +
-  ylab('Spearman correlation coefficient') + xlab('ATAC data modality')
-ggsave('prediction_results_nonbias_perfold.pdf', height=5, width=8)
+
+
+ggplot(final.corr.df) + geom_violin(aes(x=V2,y=V1,fill=V5)) +
+  geom_boxplot(aes(x=V2,y=V1,fill=V5), width=0.4, position=position_dodge(width=0.9)) + 
+  facet_grid(cols=vars(V4),rows=vars(V3)) +
+  ylab('Spearman correlation coefficient') + xlab('ATAC data modality') +
+  theme_bw()
+ggsave('performance_byfold_bychrsets.pdf', height=10, width=7)
