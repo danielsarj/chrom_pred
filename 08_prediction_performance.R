@@ -48,6 +48,7 @@ for (co in conditions){
 final.corr.df$V1 <- as.numeric(final.corr.df$V1)
 ggplot(final.corr.df) + geom_violin(aes(x=V2,y=V1)) +
   geom_boxplot(aes(x=V2,y=V1), width=0.1) + facet_wrap(~V3) +
-  ylab('Spearman correlation coefficient') + xlab('ATAC data modality')
+  ylab('Spearman correlation coefficient') + xlab('ATAC data modality') +
+  theme_bw()
 
 ggsave('prediction_results_nonbiasmacromodel.pdf', height=5, width=5)
