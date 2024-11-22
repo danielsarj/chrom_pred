@@ -4,5 +4,5 @@
 #SBATCH --partition=caslake
 #SBATCH --account=pi-lbarreiro
 
-cd /project/lbarreiro/USERS/daniel/deeplearn_pred/scripts
-bash run_chrombpnet_arg.sh
+cd /project/lbarreiro/USERS/daniel/deeplearn_pred/github
+bash 06b_submit_predict_chrombpnets.sh
