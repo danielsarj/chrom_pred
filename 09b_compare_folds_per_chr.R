@@ -14,9 +14,9 @@ conditions <- c('NI', 'Flu')
 folds <- c(0,1,2,3,4)
 
 # read data frames containing the measured ATACseq peak values
-measured_adj <- fread('W:/katieData/ATACseq_peaks.filtered.paired.noDup.counts_batch.age.corrected.txt')
+measured_adj <- fread('/project/lbarreiro/USERS/daniel/katieData/ATACseq_peaks.filtered.paired.noDup.counts_batch.age.corrected.txt')
 measured_adj$V1 <- gsub('_', ':', measured_adj$V1)
-measured_count <- fread('W:/katieData/ATACseq_peaks.filtered.paired.noDup.counts')
+measured_count <- fread('/project/lbarreiro/USERS/daniel/katieData/ATACseq_peaks.filtered.paired.noDup.counts')
 measured_count$PeakID <- gsub('_', ':', measured_count$PeakID)
 
 # initialize lists of different classes of chromosomes 
@@ -26,7 +26,7 @@ valid_chr <- list()
 
 # assess which chromosomes, per fold, belong to the test, train, or validation sets
 for (f in folds){
-  t <- fromJSON(file='W:/deeplearn_pred/DIY/splits/fold_'%&%f%&%'.json')
+  t <- fromJSON(file='/project/lbarreiro/USERS/daniel/deeplearn_pred/DIY/splits/fold_'%&%f%&%'.json')
   test_chr[[f+1]] <- t$test
   train_chr[[f+1]] <- t$train
   valid_chr[[f+1]] <- t$valid
@@ -43,7 +43,7 @@ for (co in conditions){
     
     # read the result of all folds and combine them
     for (f in folds){
-      t <- fread(co%&%'_fold'%&%f%&%'_'%&%i%&%'_bwavg.txt') %>% select(V1,V4) %>%
+      t <- fread('chrombpnet_nobias_model/'%&%co%&%'_fold'%&%f%&%'_'%&%i%&%'_bwavg.txt') %>% select(V1,V4) %>%
           rename(peak=V1, !!paste0('fold',f,'_pred'):=V4)
       
       if (exists('prediction')){

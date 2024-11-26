@@ -29,7 +29,7 @@ for (co in conditions){
     
     # read the result of all folds and combine them
     for (f in folds){
-      t <- fread(co%&%'_fold'%&%f%&%'_'%&%i%&%'_bwavg.txt') %>% select(V1,V4) %>%
+      t <- fread('chrombpnet_nobias_model/'%&%co%&%'_fold'%&%f%&%'_'%&%i%&%'_bwavg.txt') %>% select(V1,V4) %>%
           rename(peak=V1, !!paste0('fold',f,'_pred'):=V4)
       
       if (exists('prediction')){
