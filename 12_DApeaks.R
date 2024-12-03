@@ -2,11 +2,12 @@
 library(data.table)
 library(tidyverse)
 library(DESeq2)
+library(UpSetR)
 "%&%" <- function(a,b) paste(a,b, sep = "")
-setwd('W:/deeplearn_pred/DIY/prediction')
+setwd('/project/lbarreiro/USERS/daniel/deeplearn_pred/DIY/prediction')
 
 # get Katie's count matrix
-katie_count <- fread('W:/katieData/ATACseq_peaks.filtered.paired.noDup.counts') %>%
+katie_count <- fread('/project/lbarreiro/USERS/daniel/katieData/ATACseq_peaks.filtered.paired.noDup.counts') %>%
   as.data.frame()
 katie_count$PeakID <- gsub('_', ':', katie_count$PeakID)
 row.names(katie_count) <- katie_count$PeakID
@@ -27,7 +28,6 @@ katie_dds <- DESeq(katie_dds)
 
 # get results
 katie_results <- results(katie_dds, contrast=c('condition', 'NI', 'Flu'))
-katie_sig_results <- katie_results[which(katie_results$padj<0.05),]
 
 ###
 
@@ -84,16 +84,39 @@ predicted_dds <- DESeqDataSetFromMatrix(countData=predicted_count, colData=predi
 predicted_dds <- DESeq(predicted_dds)
 
 # get results
-predcited_results <- results(predicted_dds, contrast=c('condition', 'NI', 'Flu'))
-predicted_sig_results <- predcited_results[which(predcited_results$padj<0.05),]
+predicted_results <- results(predicted_dds, contrast=c('condition', 'NI', 'Flu'))
 
 ###
 
+# compare katie's results to predicted results
 
+# turn DESeq2 objects into dfs and get shared peaks
+katie_results_df <- katie_results %>% as.data.frame() %>% rownames_to_column('peakID')
+predicted_results_df <- predicted_results %>% as.data.frame() %>% rownames_to_column('peakID')
+common_peaks <- inner_join(katie_results_df, predicted_results_df, by=c('peakID')) %>% select(peakID) %>%
+  pull()
 
+# filter peaks by pval and log2FC, combine dfs
+katie_results_df <- katie_results_df %>% mutate(data='real', sig=padj<0.05&abs(log2FoldChange)>2) %>% 
+  filter(peakID %in% common_peaks)
+predicted_results_df <- predicted_results_df %>% mutate(data='pred', sig=padj<0.05&abs(log2FoldChange)>2) %>% 
+  filter(peakID %in% common_peaks)
+combined_DA <- rbind(katie_results_df, predicted_results_df)
+fwrite(combined_DA, 'DApeaks_dataframe.txt', sep=' ')
 
+# make volcano plots of DA peaks
+ggplot(combined_DA) + geom_point(aes(x=log2FoldChange, y=-log10(padj), color=sig)) +
+  facet_wrap(~data) + theme_bw()
+ggsave('DApeaks_volcanoplots.pdf', height=5, width=8)
 
+# get list of peaks per data type (predicted and measured)
+katie_sig_results <- katie_results_df %>% filter(padj<0.05 & abs(log2FoldChange)>2) %>% 
+  select(peakID) %>% pull()
+predicted_sig_results <- predicted_results_df %>% filter(padj<0.05 & abs(log2FoldChange)>2) %>% 
+  select(peakID) %>% pull()
+sig_list <- list(pred=predicted_sig_results, real=katie_sig_results)
 
-
-
-
+# UpSet plot
+pdf(file='DApeaks_upsetplot.pdf', height=5, width=6, onefile=F)
+upset(fromList(sig_list), point.size=3.5, line.size=2, text.scale=c(1.3, 1.3, 1, 1, 2, 1.5))
+dev.off()
