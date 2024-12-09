@@ -4,6 +4,7 @@ library(GenomicRanges)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(ChIPseeker)
 library(org.Hs.eg.db)
+library(clusterProfiler)
 "%&%" <- function(a,b) paste(a,b, sep = "")
 setwd('W:/deeplearn_pred/DIY/prediction')
 
@@ -51,18 +52,26 @@ pred.real_summary <- pred.real_annot %>% group_by(annotation) %>% summarise(coun
 merged_summary <- rbind(pred.only_summary, real.only_summary, pred.real_summary)
 ggplot(merged_summary) + geom_col(aes(x=annotation, y=perc, fill=DApeak), position='dodge') +
   theme_bw() + coord_flip()
+ggsave('peaks.annotation.barplot.pdf', height=6, width=5)
 
+# enriched GO terms
+pred.GO <- enrichGO(pred.only_annot$geneId, org.Hs.eg.db, ont='MF') %>% as.data.frame() %>% mutate(DApeak='pred')
+real.GO <- enrichGO(real.only_annot$geneId, org.Hs.eg.db, ont='MF') %>% as.data.frame() %>% mutate(DApeak='real')
+pred.real.GO <- enrichGO(pred.real_annot$geneId, org.Hs.eg.db, ont='MF') %>% as.data.frame() %>% mutate(DApeak='pred&real')
 
+# join dfs
+jointGOs <- rbind(pred.GO, real.GO, pred.real.GO) %>% select(Description, FoldEnrichment, p.adjust, DApeak)
+ggplot(jointGOs) + geom_point(aes(x=DApeak, y=Description, color=FoldEnrichment, size=p.adjust)) + 
+  theme_bw()
+ggsave('GOenrichment.heatmap.pdf', height=7, width=10)
 
+# enriched pathways terms
+pred.path <- enrichPathway(pred.only_annot$geneId) %>% as.data.frame() %>% mutate(DApeak='pred')
+real.path <- enrichPathway(real.only_annot$geneId) %>% as.data.frame() %>% mutate(DApeak='real')
+pred.real.path <- enrichPathway(pred.real_annot$geneId) %>% as.data.frame() %>% mutate(DApeak='pred&real')
 
-
-
-
-
-
-
-
-
-
-
-
+# join dfs
+jointpaths <- rbind(pred.path, real.path, pred.real.path) %>% select(Description, FoldEnrichment, p.adjust, DApeak)
+ggplot(jointpaths) + geom_point(aes(x=DApeak, y=Description, color=FoldEnrichment, size=p.adjust)) + 
+  theme_bw()
+ggsave('Pathwayenrichment.heatmap.pdf', height=6, width=6)
