@@ -2,6 +2,7 @@
 library(data.table)
 library(tidyverse)
 library(patchwork)
+library(reshape2)
 "%&%" <- function(a,b) paste(a,b, sep = "")
 setwd('/project/lbarreiro/USERS/daniel/deeplearn_pred/DIY/prediction')
 
@@ -18,6 +19,21 @@ measured_adj <- fread('/project/lbarreiro/USERS/daniel/katieData/ATACseq_peaks.f
 measured_adj$V1 <- gsub('_', ':', measured_adj$V1)
 measured_count <- fread('/project/lbarreiro/USERS/daniel/katieData/ATACseq_peaks.filtered.paired.noDup.counts')
 measured_count$PeakID <- gsub('_', ':', measured_count$PeakID)
+
+# get indv metadata
+metadata <- fread('/project/lbarreiro/USERS/daniel/katieData/ATACseq_metadata.txt') %>% select(Sample, Admixture)
+metadata$Sample <- str_remove(metadata$Sample, "_.*")
+metadata <- metadata %>% unique() %>% mutate(Sample=case_when(
+  Sample=='EU22'~'AF22', Sample=='EU36'~'AF36',
+  Sample=='EU38'~'AF38', TRUE~Sample))
+grm <- fread('/project/lbarreiro/USERS/daniel/katieData/WGS/35Samples.filtered.GRM.rel')
+grm_ids <- fread('/project/lbarreiro/USERS/daniel/katieData/WGS/35Samples.filtered.GRM.rel.id', header=F)
+grm_ids$V1 <- str_extract(grm_ids$V1, "[A-Z]{2}[0-9]+")
+grm_ids$V2 <- str_extract(grm_ids$V2, "[A-Z]{2}[0-9]+")
+rownames(grm) <- grm_ids$V1
+colnames(grm) <- grm_ids$V2
+grm <- grm %>% rownames_to_column('ID') %>% melt() %>% unique() %>% filter(variable=='AF04')
+metadata <- inner_join(metadata, grm, by=c('Sample'='ID'))
 
 # NO BIAS MODEL PREDICTION
 # for every condition and indv
@@ -47,8 +63,8 @@ for (co in conditions){
     colnames(full) <- c('name','avg_sum','adj','count')
     
     # get spearman correlation coefficient
-    t <- data.frame(c(cor(full$avg_sum, full$adj, method='spearman'), 'adj', co),
-                    c(cor(full$avg_sum, full$count, method='spearman'), 'count', co)) %>%
+    t <- data.frame(c(cor(full$avg_sum, full$adj, method='spearman'), 'adj', co, i),
+                    c(cor(full$avg_sum, full$count, method='spearman'), 'count', co, i)) %>%
       t() %>% as.data.frame()
     
     # append to final data frame
@@ -59,6 +75,7 @@ for (co in conditions){
   }
 }
 final.corr.df_nobias$V1 <- as.numeric(final.corr.df_nobias$V1)
+final.corr.df_nobias <- inner_join(final.corr.df_nobias, metadata, by=c('V4'='Sample'))
 
 # plot data
 nobias <- ggplot(final.corr.df_nobias) + geom_violin(aes(x=V2,y=V1)) +
@@ -69,6 +86,38 @@ nobias
 
 # save plot figure
 ggsave('prediction_results_nobias.pdf', height=5, width=5)
+
+# see if prediction correlates with relatedness
+# calculate Pearson correlation and p-value for each group
+cor_data <- final.corr.df_nobias %>% filter(V4!='AF04') %>%
+  group_by(V2, V3) %>% summarize(r_value=round(cor(V1, value), 2),
+    p_value=format.pval(cor.test(V1, value)$p.value, digits = 3),
+    .groups='drop') %>% mutate(label = paste0('r = ', r_value, '\nP = ', p_value))
+
+# plot
+grm_scatter <- final.corr.df_nobias %>% filter(V4!='AF04') %>% ggplot(.) + 
+  geom_point(aes(y=V1,x=value)) + facet_grid(vars(V2), vars(V3)) + 
+  stat_smooth(aes(x=value, y=V1), method='lm', geom='smooth', formula=y~x) + 
+  geom_text(data=cor_data, aes(x=0.025, y=0.57, label=label), inherit.aes=FALSE, size=5, hjust=1) + 
+  xlab('Genetic relatedness to training individual') + ylab('Spearman correlation') + 
+  theme_bw()
+
+# calculate Pearson correlation and p-value for each group
+cor_data <- final.corr.df_nobias %>% filter(V4!='AF04') %>%
+  group_by(V2, V3) %>% summarize(r_value=round(cor(V1, Admixture), 2),
+    p_value=format.pval(cor.test(V1, Admixture)$p.value, digits = 3),
+    .groups='drop') %>% mutate(label=paste0('r = ', r_value, '\nP = ', p_value))
+
+# plot
+adm_scatter <- final.corr.df_nobias %>% filter(V4!='AF04') %>% ggplot(.) + 
+  geom_point(aes(y=V1,x=Admixture)) + facet_grid(vars(V2), vars(V3)) + 
+  stat_smooth(aes(x=Admixture, y=V1), method='lm', geom='smooth', formula=y~x) + 
+  geom_text(data=cor_data, aes(x=0.87, y=0.57, label=label), inherit.aes=FALSE, size=5, hjust=1) + 
+  xlab('African admixture levels') + ylab('Spearman correlation') + 
+  theme_bw()
+
+grm_scatter + adm_scatter
+ggsave('performance.vs.admixture_or_gr.scatter.pdf', height=10, width=13)
 
 # BIAS MODEL PREDICTION
 # for every condition and indv
