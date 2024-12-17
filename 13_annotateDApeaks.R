@@ -69,7 +69,8 @@ pred.real.GO <- enrichGO(pred.real_annot$geneId, org.Hs.eg.db, ont='MF') %>%
 jointGOs <- rbind(pred.GO, real.GO, pred.real.GO) %>% select(Description, FoldEnrichment, p.adjust, DApeak)
 ggplot(jointGOs) + geom_point(aes(x=DApeak, y=Description, color=FoldEnrichment, size=p.adjust)) + 
   theme_bw() + scale_size(transform='reverse')
-ggsave('GOenrichment.heatmap.pdf', height=7, width=10)
+ggsave('GOenrichment.heatmap.pdf', height=20, width=7)
+fwrite(jointGOs, 'GOenrichment_joint.df.txt', sep=' ')
 
 # enriched pathways terms
 pred.path <- enrichPathway(pred.only_annot$geneId) %>% as.data.frame() %>% mutate(DApeak='pred')
@@ -80,4 +81,5 @@ pred.real.path <- enrichPathway(pred.real_annot$geneId) %>% as.data.frame() %>% 
 jointpaths <- rbind(pred.path, real.path, pred.real.path) %>% select(Description, FoldEnrichment, p.adjust, DApeak)
 ggplot(jointpaths) + geom_point(aes(x=DApeak, y=Description, color=FoldEnrichment, size=p.adjust)) + 
   theme_bw() + scale_size(transform='reverse')
-ggsave('Pathwayenrichment.heatmap.pdf', height=6, width=6)
+ggsave('Pathwayenrichment.heatmap.pdf', height=20, width=10)
+fwrite(jointpaths, 'Pathwayenrichment_joint.df.txt', sep=' ')
