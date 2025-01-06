@@ -104,9 +104,9 @@ ggplot(combined_dfs) + geom_point(aes(x=logFC.x, y=logFC.y)) +
 ggsave('predicted.measured.DAlogFCcorrelation.pdf', height=4, width=4)
 
 # filter peaks by pval and combine dfs
-katie_results_df <- katie_results_df %>% mutate(data='real', sig=adj.P.Val<0.05) %>% 
+katie_results_df <- katie_results_df %>% mutate(data='real', sig=adj.P.Val<0.05 & abs(logFC)>1) %>% 
   filter(peakID %in% common_peaks)
-predicted_results_df <- predicted_results_df %>% mutate(data='pred', sig=adj.P.Val<0.05) %>% 
+predicted_results_df <- predicted_results_df %>% mutate(data='pred', sig=adj.P.Val<0.05 & abs(logFC)>1) %>% 
   filter(peakID %in% common_peaks)
 combined_DA <- rbind(katie_results_df, predicted_results_df)
 fwrite(combined_DA, 'DApeaks_dataframe.txt', sep=' ')
@@ -117,9 +117,9 @@ ggplot(combined_DA) + geom_point(aes(x=logFC, y=-log10(adj.P.Val), color=sig)) +
 ggsave('DApeaks_volcanoplots.pdf', height=5, width=8)
 
 # get list of peaks per data type (predicted and measured)
-katie_sig_results <- katie_results_df %>% filter(adj.P.Val<0.05) %>% 
+katie_sig_results <- katie_results_df %>% filter(adj.P.Val<0.05 & abs(logFC)>1) %>% 
   select(peakID) %>% pull()
-predicted_sig_results <- predicted_results_df %>% filter(adj.P.Val<0.05) %>% 
+predicted_sig_results <- predicted_results_df %>% filter(adj.P.Val<0.05 & abs(logFC)>1) %>% 
   select(peakID) %>% pull()
 sig_list <- list(pred=predicted_sig_results, real=katie_sig_results)
 
