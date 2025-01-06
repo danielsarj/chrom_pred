@@ -7,6 +7,7 @@ library(ChIPseeker)
 library(ReactomePA)
 library(org.Hs.eg.db)
 library(clusterProfiler)
+library(fgsea)
 "%&%" <- function(a,b) paste(a,b, sep = "")
 setwd('/project/lbarreiro/USERS/daniel/deeplearn_pred/DIY/prediction')
 txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
@@ -19,10 +20,12 @@ real_DA <- DAfile %>% filter(data=='real', sig==TRUE) %>% dplyr::select(peakID) 
   separate(peakID, into=c('chr', 'start', 'end'), sep=':') %>% makeGRangesFromDataFrame()
 
 # annotate peaks
-pred_annot = annotatePeak(pred_DA, tssRegion=c(-3000, 3000), TxDb=txdb, annoDb='org.Hs.eg.db') %>%
-  as.data.frame() %>% mutate(peakID=seqnames%&%':'%&%start%&%':'%&%end)
-real_annot = annotatePeak(real_DA, tssRegion=c(-3000, 3000), TxDb=txdb, annoDb='org.Hs.eg.db') %>%
-  as.data.frame() %>% mutate(peakID=seqnames%&%':'%&%start%&%':'%&%end)
+pred_annot <- annotatePeak(pred_DA, tssRegion=c(-3000, 3000), TxDb=txdb, annoDb='org.Hs.eg.db') %>%
+  as.data.frame() %>% mutate(peakID=seqnames%&%':'%&%start%&%':'%&%end) %>% 
+  group_by(SYMBOL) %>% slice(which.min(abs(distanceToTSS)))
+real_annot <- annotatePeak(real_DA, tssRegion=c(-3000, 3000), TxDb=txdb, annoDb='org.Hs.eg.db') %>%
+  as.data.frame() %>% mutate(peakID=seqnames%&%':'%&%start%&%':'%&%end) %>% 
+  group_by(SYMBOL) %>% slice(which.min(abs(distanceToTSS)))
 
 # get info about peak subsets (real/pred only; intersection)
 pred_peaks <- DAfile %>% filter(data=='pred', sig==TRUE) %>% dplyr::select(peakID) %>% pull()
@@ -69,7 +72,7 @@ pred.real.GO <- enrichGO(pred.real_annot$geneId, org.Hs.eg.db, ont='MF') %>%
 jointGOs <- rbind(pred.GO, real.GO, pred.real.GO) %>% select(Description, FoldEnrichment, p.adjust, DApeak)
 ggplot(jointGOs) + geom_point(aes(x=DApeak, y=Description, color=FoldEnrichment, size=p.adjust)) + 
   theme_bw() + scale_size(transform='reverse')
-ggsave('GOenrichment.heatmap.pdf', height=20, width=7)
+ggsave('GOenrichment.heatmap.pdf', height=20, width=10)
 fwrite(jointGOs, 'GOenrichment_joint.df.txt', sep=' ')
 
 # enriched pathways terms
@@ -83,3 +86,46 @@ ggplot(jointpaths) + geom_point(aes(x=DApeak, y=Description, color=FoldEnrichmen
   theme_bw() + scale_size(transform='reverse')
 ggsave('Pathwayenrichment.heatmap.pdf', height=20, width=10)
 fwrite(jointpaths, 'Pathwayenrichment_joint.df.txt', sep=' ')
+
+# GSEA
+# make model-specific GRange objects for all peaks
+pred_DA <- DAfile %>% filter(data=='pred') %>% dplyr::select(peakID) %>%
+  separate(peakID, into=c('chr', 'start', 'end'), sep=':') %>% makeGRangesFromDataFrame()
+real_DA <- DAfile %>% filter(data=='real') %>% dplyr::select(peakID) %>%
+  separate(peakID, into=c('chr', 'start', 'end'), sep=':') %>% makeGRangesFromDataFrame()
+
+# annotate peaks
+pred_annot <- annotatePeak(pred_DA, tssRegion=c(-3000, 3000), TxDb=txdb, annoDb='org.Hs.eg.db') %>%
+  as.data.frame() %>% mutate(peakID=seqnames%&%':'%&%start%&%':'%&%end) %>% 
+  group_by(SYMBOL) %>% slice(which.min(abs(distanceToTSS)))
+real_annot <- annotatePeak(real_DA, tssRegion=c(-3000, 3000), TxDb=txdb, annoDb='org.Hs.eg.db') %>%
+  as.data.frame() %>% mutate(peakID=seqnames%&%':'%&%start%&%':'%&%end) %>% 
+  group_by(SYMBOL) %>% slice(which.min(abs(distanceToTSS)))
+
+# perform gsea
+pred_gsea <- DAfile %>% filter(data=='pred') %>% 
+  right_join(pred_annot) %>% arrange(logFC) 
+pred_ranks <- pred_gsea %>% select(geneId, logFC) 
+pred_pathways <- reactomePathways(pred_ranks$geneId)
+pred_ranks <- setNames(pred_ranks$logFC, pred_ranks$geneId)
+pred_gsea <- fgsea(pathways=pred_pathways, stats=pred_ranks, minSize=15, maxSize=500)
+
+pred.topPathwaysUp <- pred_gsea[ES > 0][head(order(pval), n=10), pathway]
+pred.topPathwaysDown <- pred_gsea[ES < 0][head(order(pval), n=10), pathway]
+pred.topPathways <- c(pred.topPathwaysUp, rev(pred.topPathwaysDown))
+plotGseaTable(pred_pathways[pred.topPathways], pred_ranks, pred_gsea, gseaParam=0.5)
+
+real_gsea <- DAfile %>% filter(data=='real') %>% 
+  right_join(real_annot) %>% arrange(logFC) 
+real_ranks <- real_gsea %>% select(geneId, logFC) 
+real_pathways <- reactomePathways(real_ranks$geneId)
+real_ranks <- setNames(real_ranks$logFC, real_ranks$geneId)
+real_gsea <- fgsea(pathways=real_pathways, stats=real_ranks, minSize=15, maxSize=500)
+
+real.topPathwaysUp <- real_gsea[ES > 0][head(order(pval), n=10), pathway]
+real.topPathwaysDown <- real_gsea[ES < 0][head(order(pval), n=10), pathway]
+real.topPathways <- c(real.topPathwaysUp, rev(real.topPathwaysDown))
+plotGseaTable(real_pathways[real.topPathways], real_ranks, real_gsea, gseaParam=0.5)
+
+joint_gsea <- rbind(mutate(pred_gsea, data='pred'), mutate(real_gsea, data='real'))
+fwrite(joint_gsea, 'GSEA_joint.df.txt', sep=' ')
